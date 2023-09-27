@@ -27,7 +27,13 @@
 ; Here's the one you need to solve
 (define bintree-add
   (lambda (bt num)
-    (nyi)))
+    (cases bintree bt
+      [leaf-node (datum)
+                 (leaf-node (+ datum num))]
+      [interior-node (value left right)
+                     (interior-node value
+                           (bintree-add left num)
+                           (bintree-add right num))])))
 
 ; This is a parser for simple Scheme expressions, 
 ; such as those in EOPL, 3.1 thru 3.3.
@@ -40,7 +46,7 @@
   [lit-exp
    (data number?)]
   [lambda-exp
-   (id symbol?)
+   (id list?)
    (body expression?)]
   [app-exp
    (rator expression?)
@@ -59,7 +65,7 @@
       [(pair? datum)
        (cond
          [(eqv? (car datum) 'lambda)
-          (lambda-exp (car (2nd  datum))
+          (lambda-exp (2nd  datum)
                       (parse-exp (3rd datum)))]
          [else (app-exp (parse-exp (1st datum))
                         (parse-exp (2nd datum)))])]
