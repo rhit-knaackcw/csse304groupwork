@@ -55,15 +55,6 @@
    (if-cond expression?)
    (if-true expression?)
    (if-false expression?)]
-  [let-exp
-   (id list?) ; list of pairs
-   (body expression?)]
-  [nlet-exp
-   (proc symbol?)
-   (id list?)
-   (body expression?)]
-  [let*-exp ]
-  [letrec-exp ]
   [app-exp
    (rator expression?)
    (rand expression?)])
@@ -94,7 +85,6 @@
           (if-exp (parse-exp (2nd datum))
                   (parse-exp (3rd datum))
                   (parse-exp (4th datum)))]
-         [(eqv? (1st datum) 'let) ]
          [else (app-exp (parse-exp (1st datum))
                         (parse-exp (2nd datum)))])]
       [else (error 'parse-exp "bad expression: ~s" datum)])))
