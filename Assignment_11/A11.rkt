@@ -55,6 +55,9 @@
    (if-cond expression?)
    (if-true expression?)
    (if-false expression?)]
+  [ne-if-exp
+   (if-cond expression?)
+   (if-true expression?)]
   [let-exp
    (id list?) ; list of pair
    (body expression?)]
@@ -86,20 +89,29 @@
       [(pair? datum)
        (cond
          [(eqv? (car datum) 'lambda)
+          (unless (not (= (length datum) 2))
+            (error 'parse-exp "Null lambda body"))  ;Checks for lambda with no body
+          (unless (list? (3rd datum))
+            (error 'parse-exp "Invalid lambda body"))
           (lambda-exp (2nd  datum)
                       (parse-exp (3rd datum)))]
          [(eqv? (car datum) 'set!)         ;parse set!
           (unless (symbol? (second datum))
-            (error 'parse-exp "Illegal set! identifier"))
+            (error 'parse-exp "Illegal set! identifier"))  
           (set-exp
            (second datum)
            (parse-exp (third datum)))]
-         [(eqv? (car datum) 'if)           ;parse if - add case for no else expression
-          (if-exp (parse-exp (2nd datum))
+         [(eqv? (car datum) 'if)   
+          (if (= (length datum) 3)
+               (if-exp (parse-exp (2nd datum))
+                  (parse-exp (3rd datum)))
+               (if-exp (parse-exp (2nd datum))
                   (parse-exp (3rd datum))
-                  (parse-exp (4th datum)))]
+                  (parse-exp (4th datum))))]
          [(eqv? (1st datum) 'let)
-          (if )] ;determine if this is a regular or named let
+          ;(if (list? (2nd datum))
+             (let*-exp (2nd datum)) ;placeholder so I can run tests
+          (parse-exp 3rd datum)] ;determine if this is a regular or named let
          [(eqv? (1st datum 'let*))
           (let*-exp (2nd datum))
           (parse-exp 3rd datum)]
