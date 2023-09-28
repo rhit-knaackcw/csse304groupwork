@@ -48,6 +48,13 @@
   [lambda-exp
    (id list?)
    (body expression?)]
+  [set-exp
+   (id symbol?)
+   (init-exp expression?)]
+  [if-exp
+   (if-cond expression?)
+   (if-true expression?)
+   (if-false expression?)]
   [app-exp
    (rator expression?)
    (rand expression?)])
@@ -56,6 +63,7 @@
 (define 1st car)
 (define 2nd cadr)
 (define 3rd caddr)
+(define 4th cadddr)
 
 (define parse-exp         
   (lambda (datum)
@@ -67,6 +75,16 @@
          [(eqv? (car datum) 'lambda)
           (lambda-exp (2nd  datum)
                       (parse-exp (3rd datum)))]
+         [(eqv? (car datum) 'set!)         ;parse set!
+          (unless (symbol? (second datum))
+            (error 'parse-exp "Illegal set! identifier"))
+          (set-exp
+           (second datum)
+           (parse-exp (third datum)))]
+         [(eqv? (car datum) 'if)           ;parse if - add case for no else expression
+          (if-exp (parse-exp (2nd datum))
+                  (parse-exp (3rd datum))
+                  (parse-exp (4th datum)))]
          [else (app-exp (parse-exp (1st datum))
                         (parse-exp (2nd datum)))])]
       [else (error 'parse-exp "bad expression: ~s" datum)])))
