@@ -56,14 +56,18 @@
    (if-true expression?)
    (if-false expression?)]
   [let-exp
-   (id list?) ; list of pairs
+   (id list?) ; list of pair
    (body expression?)]
   [nlet-exp
    (proc symbol?)
    (id list?)
    (body expression?)]
-  [let*-exp ]
-  [letrec-exp ]
+  [let*-exp
+   (id list?) ; list of pairs
+   (body expression?)]
+  [letrec-exp
+   (id list?) ; lambda statement in here
+   (body expression?)]
   [app-exp
    (rator expression?)
    (rand expression?)])
@@ -94,7 +98,14 @@
           (if-exp (parse-exp (2nd datum))
                   (parse-exp (3rd datum))
                   (parse-exp (4th datum)))]
-         [(eqv? (1st datum) 'let) ]
+         [(eqv? (1st datum) 'let)
+          (if )] ;determine if this is a regular or named let
+         [(eqv? (1st datum 'let*))
+          (let*-exp (2nd datum))
+          (parse-exp 3rd datum)]
+         [(eqv? (1st datum 'letrec))
+          (letrec-exp (2nd datum))
+          (parse-exp 3rd datum)]
          [else (app-exp (parse-exp (1st datum))
                         (parse-exp (2nd datum)))])]
       [else (error 'parse-exp "bad expression: ~s" datum)])))
