@@ -103,7 +103,7 @@
            (parse-exp (third datum)))]
          [(eqv? (car datum) 'if)   
           (if (= (length datum) 3)
-               (if-exp (parse-exp (2nd datum))
+               (ne-if-exp (parse-exp (2nd datum))
                   (parse-exp (3rd datum)))
                (if-exp (parse-exp (2nd datum))
                   (parse-exp (3rd datum))
