@@ -44,7 +44,13 @@
   (lambda (e)
     (cond [(null? e) #t]
           [(number? e) #t]
-          [(list? e) (and (lit-exp? (car e)) (lit-exp? (cdr e)))]
+          [(list? e) (cond [(eqv? (car e) 'lambda) #f]
+                           [(eqv? (car e) 'let) #f]
+                           [(eqv? (car e) 'let*) #f]
+                           [(eqv? (car e) 'letrec) #f]
+                           [(eqv? (car e) 'if) #f]
+                           [(eqv? (car e) 'set!) #f]
+                           [else #t])]
           [(string? e) #t]
           [(boolean? e) #t]
           [else #f])))
@@ -55,7 +61,7 @@
   [lit-exp
    (data lit-exp?)]
   [lambda-exp
-   (id list?)
+   (id (lambda (x) (or (list? x) (symbol? x))))
    (body expression?)]
   [set-exp
    (id symbol?)
@@ -98,19 +104,23 @@
       [(pair? datum)
        (cond
          [(eqv? (car datum) 'lambda)
-          (unless (not (= (length datum) 2))
+          (unless (> (length datum) 2)  ;TODO check
             (error 'parse-exp "Null lambda body"))  ;Checks for lambda with no body
-          (unless (list? (3rd datum))
-            (error 'parse-exp "Invalid lambda body"))
+          (unless (or (symbol? (2nd datum)) (andmap symbol? (2nd datum)))
+            (error 'parse-exp "invalid input to lambda"))
           (lambda-exp (2nd  datum)
-                      (parse-exp (3rd datum)))]
+                      (parse-exp (cddr datum)))]
          [(eqv? (car datum) 'set!)         ;parse set!
           (unless (symbol? (second datum))
-            (error 'parse-exp "Illegal set! identifier"))  
+            (error 'parse-exp "Illegal set! identifier"))
+          (unless (= (length datum) 3)
+            (error 'parse-exp "invalid number of set inputs"))
           (set-exp
            (second datum)
            (parse-exp (third datum)))]
-         [(eqv? (car datum) 'if)   
+         [(eqv? (car datum) 'if)
+          (unless (< (length datum) 2)
+            (error 'parse-exp "Missing if body"))
           (if (= (length datum) 3)
                (ne-if-exp (parse-exp (2nd datum))
                   (parse-exp (3rd datum)))
@@ -118,15 +128,43 @@
                   (parse-exp (3rd datum))
                   (parse-exp (4th datum))))]
          [(eqv? (1st datum) 'let)
-          ;(if (list? (2nd datum))
-             (let*-exp (2nd datum)) ;placeholder so I can run tests
-          (parse-exp 3rd datum)] ;determine if this is a regular or named let
+          (unless  (list? (2nd datum))
+            (error 'parse-exp "invalid let argument"))
+          (unless (> (length datum) 2) 
+            (error 'parse-exp "Null let body"))
+           (unless (andmap list? (2nd datum))
+            (error 'parse-exp "invalid input to let"))
+           (unless (andmap (lambda (x) (= (length x) 2)) (2nd datum))
+             (error 'parse-exp "invalid input assignment in let"))
+            (unless (andmap (lambda (x) (and (symbol? (1st x)) (parse-exp (2nd x)))) (2nd datum))
+            (error 'parse-exp "invalid input to let"))
+
+          (if (string? (2nd datum))
+              (nlet-exp (2nd datum) (3rd datum) (parse-exp (cdddr datum)));named let
+              (let-exp (2nd datum) (parse-exp (cddr datum))));regular let
+                                      ]
          [(eqv? (1st datum) 'let*)
-          (let*-exp (2nd datum))
-          (parse-exp 3rd datum)]
+          (unless (list? (2nd datum))
+            (error 'parse-exp "invalid let argument"))
+          (unless (andmap (lambda (x) (= (length x) 2)) (2nd datum))
+             (error 'parse-exp "invalid input assignment in let"))
+          (unless (> (length datum) 2) 
+            (error 'parse-exp "Null let* body"))
+           (unless (andmap (lambda (x) (and (symbol? (1st x)) (parse-exp (2nd x)))) (2nd datum))
+            (error 'parse-exp "invalid input to let"))
+          (let*-exp (2nd datum)
+          (parse-exp (cddr datum)))]
          [(eqv? (1st datum) 'letrec)
-          (letrec-exp (2nd datum))
-          (parse-exp 3rd datum)]
+          (unless (and (list? (2nd datum)) (andmap (lambda (x) (= (length x) 2)) (2nd datum)))
+            (error 'parse-exp "invalid let argument"))
+          (unless (> (length datum) 2) 
+            (error 'parse-exp "Null let body"))
+          (unless (andmap (lambda (x) (and (symbol? (1st x)) (parse-exp (2nd x)))) (2nd datum))
+            (error 'parse-exp "invalid input to let"))
+          (letrec-exp (2nd datum)
+          (parse-exp (cddr datum)))]
+         [(not (list? datum))
+          (error 'parse-exp "invalid list")]
          [else (app-exp (parse-exp (1st datum))
                         (parse-exp (2nd datum)))])]
       [else (error 'parse-exp "bad expression: ~s" datum)])))
@@ -136,15 +174,15 @@
     (cases expression exp
       [var-exp (id) id]
       [lit-exp (id) id]
-      [lambda-exp (id body) (list 'lambda id (unparse-exp body))]
-      [set-exp (id init-set) #f]
-      [if-exp (if-cond if-true if-false) #f]
-      [ne-if-exp (if-cond if-true) #f]
-      [let-exp (id body) #f]
-      [nlet-exp (id proc body) #f]
-      [let*-exp (id body) #f]
-      [letrec-exp (id body) #f]
-      [app-exp (rator rand) #f])))
+      [lambda-exp (id body) (cons 'lambda (cons id (unparse-exp body)))]
+      [set-exp (id init-set) (list 'set! id (unparse-exp init-set))]
+      [if-exp (if-cond if-true if-false) (list 'if (unparse-exp if-cond) (unparse-exp if-true) (unparse-exp if-false))]
+      [ne-if-exp (if-cond if-true) (list 'if (unparse-exp if-cond) (unparse-exp if-true))]
+      [let-exp (id body) (cons 'let (cons id (unparse-exp body)))]
+      [nlet-exp (proc id body) (list 'let proc id (unparse-exp body))]
+      [let*-exp (id body) (cons 'let* (cons id (unparse-exp body)))]
+      [letrec-exp (id body) (cons 'letrec (cons id (unparse-exp body)))]
+      [app-exp (rator rand) (list (unparse-exp rator) (unparse-exp rand))])))
       
 
 ; An auxiliary procedure that could be helpful.
