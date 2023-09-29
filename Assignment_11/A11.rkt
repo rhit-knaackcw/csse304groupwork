@@ -40,11 +40,20 @@
 
 ; You will want to replace this with your parser that includes more expression types, more options for these types, and error-checking.
 
+(define lit-exp?
+  (lambda (e)
+    (cond [(null? e) #t]
+          [(number? e) #t]
+          [(list? e) (and (lit-exp? (car e)) (lit-exp? (cdr e)))]
+          [(string? e) #t]
+          [(boolean? e) #t]
+          [else #f])))
+
 (define-datatype expression expression?
   [var-exp
    (id symbol?)]
   [lit-exp
-   (data number?)]
+   (data lit-exp?)]
   [lambda-exp
    (id list?)
    (body expression?)]
@@ -85,7 +94,7 @@
   (lambda (datum)
     (cond
       [(symbol? datum) (var-exp datum)]
-      [(number? datum) (lit-exp datum)]
+      [(lit-exp? datum) (lit-exp datum)]
       [(pair? datum)
        (cond
          [(eqv? (car datum) 'lambda)
@@ -112,10 +121,10 @@
           ;(if (list? (2nd datum))
              (let*-exp (2nd datum)) ;placeholder so I can run tests
           (parse-exp 3rd datum)] ;determine if this is a regular or named let
-         [(eqv? (1st datum 'let*))
+         [(eqv? (1st datum) 'let*)
           (let*-exp (2nd datum))
           (parse-exp 3rd datum)]
-         [(eqv? (1st datum 'letrec))
+         [(eqv? (1st datum) 'letrec)
           (letrec-exp (2nd datum))
           (parse-exp 3rd datum)]
          [else (app-exp (parse-exp (1st datum))
@@ -124,7 +133,19 @@
 
 (define unparse-exp
   (lambda (exp)
-    (nyi)))
+    (cases expression exp
+      [var-exp (id) id]
+      [lit-exp (id) id]
+      [lambda-exp (id body) (list 'lambda id (unparse-exp body))]
+      [set-exp (id init-set) #f]
+      [if-exp (if-cond if-true if-false) #f]
+      [ne-if-exp (if-cond if-true) #f]
+      [let-exp (id body) #f]
+      [nlet-exp (id proc body) #f]
+      [let*-exp (id body) #f]
+      [letrec-exp (id body) #f]
+      [app-exp (rator rand) #f])))
+      
 
 ; An auxiliary procedure that could be helpful.
 (define var-exp?
