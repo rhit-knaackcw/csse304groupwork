@@ -11,17 +11,14 @@
 
 ;Expression datatype
 
-(define lit-exp?
-  (lambda (x)
-      (ormap 
-       (lambda (pred) (pred x))
-       (list number? vector? boolean? symbol? string? pair? null?))))
-
 (define-datatype expression expression?
   [var-exp
    (id symbol?)]
-  ;[lit-exp
-  ; (data lit-exp?)]
+  [lit-exp       
+   (datum (lambda (x)
+      (ormap 
+       (lambda (pred) (pred x))
+       (list number? vector? boolean? symbol? string? pair? null?))))]
   [lambda-exp
    (id (lambda (x) (or (list? x) (symbol? x))))
    (body expression?)]
@@ -48,11 +45,9 @@
   [letrec-exp
    (id list?) ; lambda statement in here
    (body expression?)]
-  [lit-exp       
-   (datum lit-exp?)]
   [app-exp
    (rator expression?)
-   (rand expression?)])
+   (rand (list-of? expression?))])
 	
 
 ;; environment type definitions
@@ -99,7 +94,12 @@
   (lambda (datum)
     (cond
       [(symbol? datum) (var-exp datum)]
-      [(lit-exp? datum) (lit-exp datum)]
+      [(
+        (lambda (x)
+          (ormap 
+           (lambda (pred) (pred x))
+           (list number? vector? boolean? symbol? string? null?))) datum)
+       (lit-exp datum)]
       [(pair? datum)
        (cond
          [(eqv? (car datum) 'lambda)
@@ -165,7 +165,7 @@
          [(not (list? datum))
           (error 'parse-exp "invalid list")]
          [else (app-exp (parse-exp (1st datum))
-                        (parse-exp (2nd datum)))])]
+                        (map parse-exp (cdr datum)))])]
       
       [else (error 'parse-exp "bad expression: ~s" datum)])))
 
@@ -248,6 +248,14 @@
                (let ([proc-value (eval-exp rator)]
                      [args (eval-rands rands)])
                  (apply-proc proc-value args))]
+      [lambda-exp (id body) #t]
+      [set-exp (id init-exp) #t]
+      [if-exp (if-cond if-true if-false) #t]
+      [ne-if-exp (if-cond if-true) #t]
+      [let-exp (id body) #t]
+      [nlet-exp (proc id body) #t]
+      [let*-exp (id body) #t]
+      [letrec-exp (id body) #t]
       [else (error 'eval-exp "Bad abstract syntax: ~a" exp)])))
 
 ; evaluate the list of operands, putting results into a list
