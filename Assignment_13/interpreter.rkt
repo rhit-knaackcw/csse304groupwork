@@ -9,22 +9,50 @@
 ;                   |
 ;-------------------+
 
-; parsed expression.  You'll probably want to replace this 
-; code with your expression datatype from A11b
+;Expression datatype
 
-(define-datatype expression expression?  
-  [var-exp        ; variable references
-   (id symbol?)]
-  [lit-exp        ; "Normal" data.  Did I leave out any types?
-   (datum
-    (lambda (x)
+(define lit-exp?
+  (lambda (x)
       (ormap 
        (lambda (pred) (pred x))
-       (list number? vector? boolean? symbol? string? pair? null?))))]
-  [app-exp        ; applications
+       (list number? vector? boolean? symbol? string? pair? null?))))
+
+(define-datatype expression expression?
+  [var-exp
+   (id symbol?)]
+  ;[lit-exp
+  ; (data lit-exp?)]
+  [lambda-exp
+   (id (lambda (x) (or (list? x) (symbol? x))))
+   (body expression?)]
+  [set-exp
+   (id symbol?)
+   (init-exp expression?)]
+  [if-exp
+   (if-cond expression?)
+   (if-true expression?)
+   (if-false expression?)]
+  [ne-if-exp
+   (if-cond expression?)
+   (if-true expression?)]
+  [let-exp
+   (id list?) ; list of pair
+   (body expression?)]
+  [nlet-exp
+   (proc symbol?)
+   (id list?)
+   (body expression?)]
+  [let*-exp
+   (id list?) ; list of pairs
+   (body expression?)]
+  [letrec-exp
+   (id list?) ; lambda statement in here
+   (body expression?)]
+  [lit-exp       
+   (datum lit-exp?)]
+  [app-exp
    (rator expression?)
-   (rands (list-of? expression?))]  
-  )
+   (rand expression?)])
 	
 
 ;; environment type definitions
@@ -59,23 +87,87 @@
 ; You will want to replace this with your parser that includes more expression types, more options for these types, and error-checking.
 
 ; Helper procedures to make the parser a little bit saner.
+
+; Again, you'll probably want to use your code from A11b
+
 (define 1st car)
 (define 2nd cadr)
 (define 3rd caddr)
-
-; Again, you'll probably want to use your code from A11b
+(define 4th cadddr)
 
 (define parse-exp         
   (lambda (datum)
     (cond
       [(symbol? datum) (var-exp datum)]
-      [(number? datum) (lit-exp datum)]
+      [(lit-exp? datum) (lit-exp datum)]
       [(pair? datum)
        (cond
-         [else (app-exp (parse-exp (1st datum))
-                        (map parse-exp (cdr datum)))])]
-      [else (error 'parse-exp "bad expression: ~s" datum)])))
+         [(eqv? (car datum) 'lambda)
+          (unless (> (length datum) 2)  
+            (error 'parse-exp "Null lambda body"))  ;Checks for lambda with no body
+          (unless (or (symbol? (2nd datum)) (andmap symbol? (2nd datum)))
+            (error 'parse-exp "invalid input to lambda"))
+          (lambda-exp (2nd  datum)
+                      (parse-exp (cddr datum)))]
+         [(eqv? (car datum) 'set!)         ;parse set!
+          (unless (symbol? (second datum))
+            (error 'parse-exp "Illegal set! identifier"))
+          (unless (= (length datum) 3)
+            (error 'parse-exp "invalid number of set inputs"))
+          (set-exp
+           (second datum)
+           (parse-exp (third datum)))]
+         [(eqv? (car datum) 'if)
+          (unless (< (length datum) 2)
+            (error 'parse-exp "Missing if body"))
+          (if (= (length datum) 3)
+               (ne-if-exp (parse-exp (2nd datum))
+                  (parse-exp (3rd datum)))
+               (if-exp (parse-exp (2nd datum))
+                  (parse-exp (3rd datum))
+                  (parse-exp (4th datum))))]
+         [(eqv? (1st datum) 'let)
+          (unless  (list? (2nd datum))
+            (error 'parse-exp "invalid let argument"))
+          (unless (> (length datum) 2) 
+            (error 'parse-exp "Null let body"))
+           (unless (andmap list? (2nd datum))
+            (error 'parse-exp "invalid input to let"))
+           (unless (andmap (lambda (x) (= (length x) 2)) (2nd datum))
+             (error 'parse-exp "invalid input assignment in let"))
+            (unless (andmap (lambda (x) (and (symbol? (1st x)) (parse-exp (2nd x)))) (2nd datum))
+            (error 'parse-exp "invalid input to let"))
 
+          (if (string? (2nd datum))
+              (nlet-exp (2nd datum) (3rd datum) (parse-exp (cdddr datum)));named let
+              (let-exp (2nd datum) (parse-exp (cddr datum))));regular let
+                                      ]
+         [(eqv? (1st datum) 'let*)
+          (unless (list? (2nd datum))
+            (error 'parse-exp "invalid let argument"))
+          (unless (andmap (lambda (x) (= (length x) 2)) (2nd datum))
+             (error 'parse-exp "invalid input assignment in let"))
+          (unless (> (length datum) 2) 
+            (error 'parse-exp "Null let* body"))
+           (unless (andmap (lambda (x) (and (symbol? (1st x)) (parse-exp (2nd x)))) (2nd datum))
+            (error 'parse-exp "invalid input to let"))
+          (let*-exp (2nd datum)
+          (parse-exp (cddr datum)))]
+         [(eqv? (1st datum) 'letrec)
+          (unless (and (list? (2nd datum)) (andmap (lambda (x) (= (length x) 2)) (2nd datum)))
+            (error 'parse-exp "invalid let argument"))
+          (unless (> (length datum) 2) 
+            (error 'parse-exp "Null let body"))
+          (unless (andmap (lambda (x) (and (symbol? (1st x)) (parse-exp (2nd x)))) (2nd datum))
+            (error 'parse-exp "invalid input to let"))
+          (letrec-exp (2nd datum)
+          (parse-exp (cddr datum)))]
+         [(not (list? datum))
+          (error 'parse-exp "invalid list")]
+         [else (app-exp (parse-exp (1st datum))
+                        (parse-exp (2nd datum)))])]
+      
+      [else (error 'parse-exp "bad expression: ~s" datum)])))
 
 ;-------------------+
 ;                   |
