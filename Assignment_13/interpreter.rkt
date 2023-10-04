@@ -64,7 +64,6 @@
    (env environment?)]
   [closure
    (syms (list-of? symbol?))
-   (vals (list-of? scheme-value?))
    (code expression?)
    (env environment?)])
 
@@ -74,7 +73,11 @@
 
 (define-datatype proc-val proc-val?
   [prim-proc
-   (name symbol?)])
+   (name symbol?)]
+  [closure-proc
+   (syms (list-of? symbol?))
+   (code expression?)
+   (env environment?)])
 
   
 ;-------------------+
@@ -210,7 +213,7 @@
                              (if (number? pos)
                                  (list-ref vals pos)
                                  (apply-env env sym)))]
-      [closure (vars syms code env) #t]
+      [closure (syms code env) (apply-env env sym)]
       )))
 
 
@@ -256,8 +259,8 @@
                (let ([proc-value (eval-exp env rator)]
                      [args (eval-rands env rands)])
                  (apply-proc proc-value args))]
-      [lambda-exp (params bodies)
-                  ]
+      [lambda-exp (vars  bodies)
+                  (closure vars bodies env)]
       [set-exp (id init-exp) #t]
       [if-exp (if-cond if-true if-false) (if (eval-exp env if-cond)
                                              (eval-exp env if-true)
@@ -286,6 +289,7 @@
   (lambda (proc-value args)
     (cases proc-val proc-value
       [prim-proc (op) (apply-prim-proc op args)]
+      [closure-proc (vars code env) (eval-exp (extend-env vars args env) code)]
       ; You will add other cases
       [else (error 'apply-proc
                    "Attempt to apply bad procedure: ~s" 
@@ -293,7 +297,8 @@
 
 (define *prim-proc-names* '(+ - * / not zero? add1 sub1 cons = >=
                               car list cdr null? eq? equal? length list->vector list? pair?
-                              vector->list vector? number? symbol? caar cadr cadar procedure?))
+                              vector->list vector? number? symbol? caar cadr cadar procedure?
+                              vector vector-set! vector-ref))
 
 (define init-env         ; for now, our initial global environment only contains 
   (extend-env            ; procedure names.  Recall that an environment associates
@@ -337,6 +342,9 @@
       [(cadr) (cadr (1st args))]
       [(cadar) (cadar (1st args))]
       [(procedure?) (procedure? (1st args))]
+      [(vector) (apply vector args)]
+      [(vector-set!) (vector-set! (1st args) (2nd args) (3rd args))]
+      [(vector-ref) (vector-ref (1st args) (2nd args))]
       [else (error 'apply-prim-proc 
                    "Bad primitive procedure name: ~s" 
                    prim-proc)])))
