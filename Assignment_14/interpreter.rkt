@@ -271,9 +271,9 @@
                      [args (eval-rands env rands)])
                  (apply-proc proc-value args))]
       [lambda-exp (vars  bodies)
-                  (closure vars bodies env)]
+                  (closure-proc vars bodies env)]
       [lambda-exp-var (var-list bodies)
-                      (closure (list var-list) bodies env)]
+                      (closure-proc (list var-list) bodies env)]
       [set-exp (id init-exp) #t]
       [if-exp (if-cond if-true if-false) (if (eval-exp env if-cond)
                                              (eval-exp env if-true)
@@ -362,7 +362,7 @@
       [(vector) (apply vector args)]
       [(vector-set!) (vector-set! (1st args) (2nd args) (3rd args))]
       [(vector-ref) (vector-ref (1st args) (2nd args))]
-      [(map) (map (1st args) (cdr args))]
+      [(map) (map (lambda (x) (apply-proc (1st args) (list x))) (cdr args))];(map (1st args) (cdr args))]
       [(apply) (apply (1st args) (cdr args))]
       [else (error 'apply-prim-proc 
                    "Bad primitive procedure name: ~s" 
