@@ -84,7 +84,7 @@
    (name symbol?)]
   [closure-proc
    (syms (list-of? symbol?))
-   (code expression?)
+   (code (lambda (x) (or (expression? x) ((list-of? expression?) x))))
    (env environment?)])
 
   
@@ -109,7 +109,7 @@
 
 (define parse-exp         
   (lambda (datum)
-    (cond
+   (cond
       [(symbol? datum) (var-exp datum)]
       [((lambda (x)
           (ormap 
@@ -125,10 +125,16 @@
           (unless (or (symbol? (2nd datum)) (andmap symbol? (2nd datum)))
             (error 'parse-exp "invalid input to lambda"))
           (if (list? (2nd datum))
-              (lambda-exp (2nd datum)
-                      (parse-exp (cddr datum)))
-              (lambda-exp-var (2nd datum)
-                      (parse-exp (cddr datum))))]
+              (if (list? (3rd datum))
+                  (lambda-exp (2nd datum)
+                              (map parse-exp (cddr datum)))
+                  (lambda-exp (2nd datum)
+                          (parse-exp (caddr datum))))
+             (if (list? (3rd datum))
+                  (lambda-exp-var (2nd datum)
+                              (parse-exp (cddr datum)))
+                  (lambda-exp-var (2nd datum)
+                          (parse-exp (caddr datum)))))]
          [(eqv? (car datum) 'set!)         ;parse set!
           (unless (symbol? (second datum))
             (error 'parse-exp "Illegal set! identifier"))
@@ -304,7 +310,7 @@
   (lambda (proc-value args)
     (cases proc-val proc-value
       [prim-proc (op) (apply-prim-proc op args)]
-      [closure-proc (vars code env) (eval-exp (extend-env vars args env) code)]
+      [closure-proc (vars code env) (last (map (lambda (x) (eval-exp (extend-env vars args env) x)) code))]
       ; You will add other cases
       [else (error 'apply-proc
                    "Attempt to apply bad procedure: ~s" 
