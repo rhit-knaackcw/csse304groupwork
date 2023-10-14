@@ -190,8 +190,10 @@
           (parse-exp (cddr datum)))]
          [(not (list? datum))
           (error 'parse-exp "invalid list")]
-         [else (app-exp (parse-exp (1st datum))
-                        (map parse-exp (cdr datum)))])]
+         [else (if (null? (cdr datum))
+                   (lit-exp (1st datum))
+               (app-exp (parse-exp (1st datum))
+                        (map parse-exp (cdr datum))))])]
       
       [else (error 'parse-exp "bad expression: ~s" datum)])))
 
@@ -368,11 +370,19 @@
       [(vector) (apply vector args)]
       [(vector-set!) (vector-set! (1st args) (2nd args) (3rd args))]
       [(vector-ref) (vector-ref (1st args) (2nd args))]
-      [(map) (map (lambda (x) (apply-proc (1st args) (list x))) (cdr args))];(map (1st args) (cdr args))]
-      [(apply) (apply (1st args) (cdr args))]
+      [(map) (map (lambda (x) (apply-proc (1st args) x)) (cdr args))];(map (1st args) (cdr args))]
+      [(apply) (apply (lambda (x) (apply-proc (1st args) x)) (cdr args))]
       [else (error 'apply-prim-proc 
                    "Bad primitive procedure name: ~s" 
                    prim-proc)])))
+
+(define-syntax syntax-expand
+  (lambda (stx)
+    (syntax-case stx ()
+      [(let ((var val) ...) body ...) #'((lambda (var ...) body ...) val ...)]
+      [(cond (condition body) ...) (let recur ]
+      ;[else stx]
+      )))
 
 (define rep      ; "read-eval-print" loop.
   (lambda ()
@@ -384,4 +394,5 @@
       (rep))))  ; tail-recursive, so stack doesn't grow.
 
 (define eval-one-exp
-  (lambda (x) (top-level-eval (parse-exp x))))
+  (lambda (x)
+    (top-level-eval (parse-exp x))))

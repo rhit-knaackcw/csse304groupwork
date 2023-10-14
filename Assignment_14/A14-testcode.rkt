@@ -38,7 +38,7 @@
     [(eval-one-exp '((lambda x (car x) (cdr x)) 'a 'b 'c)) '(b c) 5] ; (run-test lambda-with-variable-args 1)
   )
 
-  (syntactic-expansion equal? ; (run-test syntactic-expansion)
+  (syntactic-expansion equal? ; (run-test one-armed-if)
     [(eval-one-exp '(cond ((< 4 3) 8) ((< 2 3) 7) (else 8))) 7 2] ; (run-test syntactic-expansion 1)
     [(eval-one-exp '(cond ((< 4 3) 8) ((> 2 3) 7) (else 6))) 6 2] ; (run-test syntactic-expansion 2)
     [(eval-one-exp '(cond (else 8))) 8 1] ; (run-test syntactic-expansion 3)
