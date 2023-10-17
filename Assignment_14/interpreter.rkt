@@ -132,7 +132,7 @@
                           (parse-exp (caddr datum))))
              (if (list? (3rd datum))
                   (lambda-exp-var (2nd datum)
-                              (parse-exp (cddr datum)))
+                              (map parse-exp (cddr datum)))
                   (lambda-exp-var (2nd datum)
                           (parse-exp (caddr datum)))))]
          [(eqv? (car datum) 'set!)         ;parse set!
@@ -310,7 +310,7 @@
 
 (define apply-proc
   (lambda (proc-value args)
-    (cases proc-val proc-value
+    (display args) (cases proc-val proc-value
       [prim-proc (op) (apply-prim-proc op args)]
       [closure-proc (vars code env) (last (map (lambda (x) (eval-exp (extend-env vars args env) x)) code))]
       ; You will add other cases
@@ -335,7 +335,7 @@
 
 (define apply-prim-proc
   (lambda (prim-proc args)
-   (case prim-proc
+    (case prim-proc
       [(+) (apply + args)]
       [(-) (apply - args)]
       [(*) (apply * args)]
@@ -370,7 +370,10 @@
       [(vector) (apply vector args)]
       [(vector-set!) (vector-set! (1st args) (2nd args) (3rd args))]
       [(vector-ref) (vector-ref (1st args) (2nd args))]
-      [(map) (map (lambda (x) (apply-proc (1st args) x)) (cdr args))];(map (1st args) (cdr args))]
+      [(map)
+       (let recur ((proc (1st args)) (args (2nd args)))
+             (cond [(null? args) '()]
+                   [else (cons (apply-proc proc (list (car args))) (recur proc (cdr args)))])) ];(map (1st args) (cdr args))] (map (lambda (x) (apply-proc (1st args) x)) (cdr args))
       [(apply) (apply (lambda (x) (apply-proc (1st args) x)) (cdr args))]
       [else (error 'apply-prim-proc 
                    "Bad primitive procedure name: ~s" 
@@ -380,8 +383,7 @@
   (lambda (stx)
     (syntax-case stx ()
       [(let ((var val) ...) body ...) #'((lambda (var ...) body ...) val ...)]
-      [(cond (condition body) ...) (let recur ]
-      ;[else stx]
+     ;[(cond (condition body) ...) #']
       )))
 
 (define rep      ; "read-eval-print" loop.
