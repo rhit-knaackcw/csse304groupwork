@@ -1,7 +1,21 @@
 #lang racket
 
 (require "../chez-init.rkt")
-(provide eval-one-exp)
+(provide eval-one-exp y2 advanced-letrec)
+
+(define y2
+  (lambda (which f1 f2)
+    (nyi)))
+
+(define-syntax (advanced-letrec stx)
+  (syntax-case stx ()
+    [(advanced-letrec ((fun-name fun-body)...) letrec-body)
+     #'(error "nyi")]))
+
+(define-syntax nyi
+  (syntax-rules ()
+    ([_]
+     [error "nyi"])))
 
 (provide add-macro-interpreter)
 (define add-macro-interpreter (lambda x (error "nyi")))
@@ -52,8 +66,10 @@
    (id list?) ; list of pairs
    (body expression?)]
   [letrec-exp
-   (id list?) ; lambda statement in here
-   (body expression?)]
+   (proc-names (list-of? symbol?))
+   (idss (list-of? (list-of? symbol?)))
+   (bodies (list-of? (list-of? expression?)))
+   (letrec-bodies (list-of? expression?))]
   [app-exp
    (rator expression?)
    (rand (list-of? expression?))])
@@ -73,7 +89,12 @@
   [closure
    (syms (list-of? symbol?))
    (code expression?)
-   (env environment?)])
+   (env environment?)]
+  [recursively-extended-env-record
+   (proc-names (list-of? symbol?))
+   (idss (list-of? (list-of? symbol?)))
+   (bodies (list-of? (list-of? expression?)))
+   (old-env environment?)])
 
 
 ; datatype for procedures.  At first there is only one
@@ -179,6 +200,7 @@
             (error 'parse-exp "invalid input to let"))
           (let*-exp (2nd datum)
           (parse-exp (cddr datum)))]
+
          [(eqv? (1st datum) 'letrec)
           (unless (and (list? (2nd datum)) (andmap (lambda (x) (= (length x) 2)) (2nd datum)))
             (error 'parse-exp "invalid let argument"))
@@ -186,8 +208,15 @@
             (error 'parse-exp "Null let body"))
           (unless (andmap (lambda (x) (and (symbol? (1st x)) (parse-exp (2nd x)))) (2nd datum))
             (error 'parse-exp "invalid input to let"))
-          (letrec-exp (2nd datum)
-          (parse-exp (cddr datum)))]
+
+          (letrec-exp (map 1st (2nd datum)) ;proc-names
+                      (map (lambda (x) (2nd (2nd x))) (2nd datum)) ;idss
+                      (map parse-exp (map (lambda (x) (3rd (2nd x))) (2nd datum))) ;bodies    PARSED-INCORRECTLY
+                      (map parse-exp (cddr datum)))] ;lambda-bodies    PARSED-INCORRECTLY
+
+         ;Right now the bodies are parsed as a list of expressions, needs to be a list of lists of expressions
+         
+         
          [(not (list? datum))
           (error 'parse-exp "invalid list")]
          [else (if (null? (cdr datum))
@@ -233,7 +262,18 @@
                                  (list-ref vals pos)
                                  (apply-env env sym)))]
       [closure (syms code env) (apply-env env sym)]
-      )))
+      [recursively-extended-env-record (proc-names idss bodies old-env)
+                                       (let ([pos (list-find-position sym proc-names)])
+                                         (if (number? pos)
+                                             (closure (list-ref idss pos)
+                                                      (list-ref bodies pos)
+                                                      env)
+                                             (apply-env old-env sym)))]
+                                         )))
+
+(define extend-env-recursively
+  (lambda (proc-names idss bodies old-env)
+    (recursively-extended-env-record proc-names idss bodies old-env)))
 
 
 ;-----------------------+
@@ -270,7 +310,7 @@
 
 (define eval-exp
   (lambda (env exp)
-    (cases expression exp
+   (cases expression exp
       [lit-exp (datum) datum]
       [var-exp (id)
                (apply-env env id)]
@@ -295,7 +335,7 @@
                (last (eval-rands new-env bodies)))]
       [nlet-exp (proc id body) #t]
       [let*-exp (id body) #t]
-      [letrec-exp (id body) #t]
+      [letrec-exp (proc-names idss bodies letrec-bodies) (let ([env (extend-env-recursively proc-names idss bodies env)]) (map (lambda (x) (eval-exp env x)) letrec-bodies))]
       [else (error 'eval-exp "Bad abstract syntax: ~a" exp)])))
 
 ; evaluate the list of operands, putting results into a list
@@ -310,7 +350,7 @@
 
 (define apply-proc
   (lambda (proc-value args)
-    (display args) (cases proc-val proc-value
+    (cases proc-val proc-value
       [prim-proc (op) (apply-prim-proc op args)]
       [closure-proc (vars code env) (last (map (lambda (x) (eval-exp (extend-env vars args env) x)) code))]
       ; You will add other cases
@@ -321,7 +361,7 @@
 (define *prim-proc-names* '(+ - * / not zero? add1 sub1 cons = >=
                               car list cdr null? eq? equal? length list->vector list? pair?
                               vector->list vector? number? symbol? caar cadr cadar procedure?
-                              vector vector-set! vector-ref map apply < >))
+                              vector vector-set! vector-ref map apply < > even?))
 
 (define init-env         ; for now, our initial global environment only contains 
   (extend-env            ; procedure names.  Recall that an environment associates
@@ -370,6 +410,7 @@
       [(vector) (apply vector args)]
       [(vector-set!) (vector-set! (1st args) (2nd args) (3rd args))]
       [(vector-ref) (vector-ref (1st args) (2nd args))]
+      [(even? ) (even? (1st args))]
       [(map)
        (let recur ((proc (1st args)) (args (2nd args)))
              (cond [(null? args) '()]
@@ -379,12 +420,15 @@
                    "Bad primitive procedure name: ~s" 
                    prim-proc)])))
 
-(define-syntax syntax-expand
-  (lambda (stx)
-    (syntax-case stx ()
-      [(let ((var val) ...) body ...) #'((lambda (var ...) body ...) val ...)]
-     ;[(cond (condition body) ...) #']
-      )))
+
+(define syntax-expand
+  (lambda (exp)
+    (cases expression exp
+      [let-exp (vars var-exps bodies) (app-exp (lambda-exp vars bodies) var-exps)]
+      ;[cond ]
+      ;[or ]
+      ;[while ]
+      [else exp])))
 
 (define rep      ; "read-eval-print" loop.
   (lambda ()
@@ -397,4 +441,4 @@
 
 (define eval-one-exp
   (lambda (x)
-    (top-level-eval (parse-exp x))))
+    (top-level-eval (syntax-expand (parse-exp x)))))
