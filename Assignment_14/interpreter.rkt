@@ -90,7 +90,7 @@
   [empty-env-record]
   [extended-env-record
    (syms (list-of? symbol?))
-   (vals (list-of? scheme-value?))
+   (vals (list-of? box?))
    (env environment?)]
   
   [recursively-extended-env-record
@@ -110,6 +110,11 @@
    (syms (list-of? symbol?))
    (code (lambda (x) (or (expression? x) ((list-of? expression?) x))))
    (env environment?)])
+
+;(define-datatype cell cell?
+;  [cell (value scheme-value?)]
+;  [cell-ref (cell cell?)]
+;  [cell-set (cell cell?) (value scheme-value?)])
 
   
 ;-------------------+
@@ -247,7 +252,7 @@
 
 (define extend-env
   (lambda (syms vals env)
-    (extended-env-record syms vals env)))
+    (extended-env-record syms (map box vals) env)))
 
 (define list-find-position
   (lambda (sym los)
@@ -257,6 +262,10 @@
             [else (loop (cdr los) (add1 pos))]))))
 	    
 (define apply-env
+  (lambda (env sym)
+    (unbox (apply-env-ref env sym))))
+
+(define apply-env-ref
   (lambda (env sym) 
     (cases environment env 
       [empty-env-record ()      
@@ -264,7 +273,7 @@
       [extended-env-record (syms vals env)
                            (let ((pos (list-find-position sym syms)))
                              (if (number? pos)
-                                 (list-ref vals pos)
+                                  (list-ref vals pos)
                                  (apply-env env sym)))]
       [recursively-extended-env-record (proc-names idss bodies old-env)
                                        (let ([pos (list-find-position sym proc-names)])
@@ -290,6 +299,7 @@
         (error 'global-env "This should never happen")]
       [recursively-extended-env-record (proc-names idss bodies old-env)
                                        (error 'global-env "ERROR")])))
+
 
    
 (define extend-env-recursively
@@ -343,7 +353,9 @@
                   (closure-proc vars bodies env)]
       [lambda-exp-var (var-list bodies)
                       (closure-proc (list var-list) bodies env)]
-      [set-exp (id init-exp) #t]
+      [set-exp (id init-exp) (set-box!
+                              (apply-env-ref env id)
+                              (eval-exp env init-exp))]
       [if-exp (if-cond if-true if-false) (if (eval-exp env if-cond)
                                              (eval-exp env if-true)
                                              (eval-exp env if-false))]
@@ -353,7 +365,7 @@
       [let-exp (vars var-exps bodies)
                (let* ((var-vals (eval-rands env var-exps))
                       (new-env (extend-env vars var-vals env)))
-               (last (eval-rands new-env bodies)))]
+                 (last (eval-rands new-env bodies)))]
       [begin-exp (bodies)
                  (last (map (lambda (x) (eval-exp env x)) bodies))]
       [define-exp (var var-exp)
@@ -367,7 +379,7 @@
 
 (define eval-rands
   (lambda (env rands)
-    (map ((curry eval-exp) env) rands)))
+    (map (lambda (x) (eval-exp env x)) rands)))
 
 ;  Apply a procedure to its arguments.
 ;  At this point, we only have primitive procedures.  
