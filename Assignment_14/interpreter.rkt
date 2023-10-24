@@ -64,8 +64,9 @@
    (var-exps list?)
    (body list?)]
   [let*-exp
-   (id list?) ; list of pairs
-   (body expression?)]
+   (vars list?) ; list of pair
+   (var-exps list?)
+   (body list?)]
   [letrec-exp
    (proc-names (list-of? symbol?))
    (idss (list-of? (list-of? symbol?)))
@@ -76,6 +77,12 @@
   [define-exp
     (var symbol?)
     (car-exp expression?)]
+  [cond-exp
+   (case (list-of? list?))]
+  [and-exp
+   (conditions (list-of? expression?))]
+  [or-exp
+   (conditions (list-of? expression?))]
   [app-exp
    (rator expression?)
    (rand (list-of? expression?))])
@@ -204,9 +211,15 @@
             (error 'parse-exp "Null let* body"))
            (unless (andmap (lambda (x) (and (symbol? (1st x)) (parse-exp (2nd x)))) (2nd datum))
             (error 'parse-exp "invalid input to let"))
-          (let*-exp (2nd datum)
-          (parse-exp (cddr datum)))]
-
+          (let*-exp (map 1st (2nd datum)) (map parse-exp (map 2nd (2nd datum))) (map parse-exp (cddr datum)))]
+         
+         [(eqv? (1st datum) 'cond)
+          (cond-exp (cdr datum))]
+         [(eqv? (1st datum) 'and)
+          (and-exp (map parse-exp (cdr datum)))]
+         [(eqv? (1st datum) 'or)
+          (or-exp (map parse-exp (cdr datum)))]
+         
          [(eqv? (1st datum) 'letrec)
           (unless (and (list? (2nd datum)) (andmap (lambda (x) (= (length x) 2)) (2nd datum)))
             (error 'parse-exp "invalid let argument"))
@@ -274,14 +287,14 @@
                            (let ((pos (list-find-position sym syms)))
                              (if (number? pos)
                                   (list-ref vals pos)
-                                 (apply-env env sym)))]
+                                 (apply-env-ref env sym)))]
       [recursively-extended-env-record (proc-names idss bodies old-env)
                                        (let ([pos (list-find-position sym proc-names)])
                                          (if (number? pos)
-                                             (closure-proc (list-ref idss pos)
+                                             (box (closure-proc (list-ref idss pos)
                                                            (list-ref bodies pos)
-                                                      env)
-                                             (apply-env old-env sym)))]
+                                                      env))
+                                             (apply-env-ref old-env sym)))]
                                          )))
 (define apply-global-env
  (lambda (env sym)
@@ -371,7 +384,7 @@
       [define-exp (var var-exp)
         (set! global-env (extend-env (list var) (list (eval-exp env var-exp)) global-env))]
       ;[nlet-exp (proc vars var-exps bodies) (eval-exp env (let-exp (list (var-exp proc)) (let-exp vars var-exps bodies) (list (var-exp proc))))]
-      [let*-exp (id body) #t]
+      ;[let*-exp (id body) #t]
       [letrec-exp (proc-names idss bodies letrec-bodies) (let ([env (extend-env-recursively proc-names idss bodies env)]) (last (map (lambda (x) (eval-exp env x)) letrec-bodies)))]
       [else (error 'eval-exp "Bad abstract syntax: ~a" exp)])))
 
@@ -390,7 +403,6 @@
     (cases proc-val proc-value
       [prim-proc (op) (apply-prim-proc op args)]
       [closure-proc (vars code env) (last (map (lambda (x) (eval-exp (extend-env vars args env) x)) code))]
-      ; You will add other cases
       [else (error 'apply-proc
                    "Attempt to apply bad procedure: ~s" 
                    proc-value)])))
@@ -398,7 +410,7 @@
 (define *prim-proc-names* '(+ - * / not zero? add1 sub1 cons = >=
                               car list cdr null? eq? equal? length list->vector list? pair?
                               vector->list vector? number? symbol? caar cadr cadar procedure?
-                              vector vector-set! vector-ref map apply < > even? or begin))
+                              vector vector-set! vector-ref map apply < > even? or begin void))
 
 (define init-env         ; for now, our initial global environment only contains 
   (extend-env            ; procedure names.  Recall that an environment associates
@@ -449,6 +461,7 @@
       [(vector-ref) (vector-ref (1st args) (2nd args))]
       [(even? ) (even? (1st args))]
       [(or) (ormap (lambda (x) (if x #t #f)) args)]
+      [(void) (void)]
       [(map)
        (let recur ((proc (1st args)) (args (2nd args)))
              (cond [(null? args) '()]
@@ -463,13 +476,14 @@
   (lambda (exp)
     (cases expression exp
       [let-exp (vars var-exps bodies) (app-exp (lambda-exp vars (map syntax-expand bodies)) (map syntax-expand var-exps))]
-      [nlet-exp (proc vars var-exps bodies) (letrec-exp (list proc) (list vars) (list bodies) (list (app-exp (var-exp proc) var-exps)))]
-      ;[var-exp (id)
-       ;        (cond [(eqv? id 'while) ]
-        ;             [else id])]
-      ;[cond ]
-      ;[or ]
+      [nlet-exp (proc vars var-exps bodies) (letrec-exp (list proc) (list vars) (list bodies) (list (app-exp (var-exp proc) var-exps)))] ;Bodies not getting syntax expanded
+      [letrec-exp (proc-names idss bodies letrec-bodies) (letrec-exp proc-names idss (map (lambda (x) (map syntax-expand x)) bodies) (map syntax-expand letrec-bodies))]
+      ;[begin-exp  ]
+      [cond-exp (case) (if-exp (if (eqv? (caar case) 'else) (parse-exp #t) (parse-exp (caar case))) (parse-exp (cadar case)) (if (null? (cdr case)) (app-exp (var-exp 'void) '((lit-exp 1))) (syntax-expand (cond-exp (cdr case)))))]
+      [and-exp (conditions) (if-exp (car conditions) (if (null? (cdr conditions)) (car conditions) (syntax-expand (and-exp (cdr conditions)))) (lit-exp #f))]
+      [or-exp (conditions) (if-exp (car conditions) (car conditions) (if (null? (cdr conditions)) (lit-exp #f) (syntax-expand (or-exp (cdr conditions))))) ]
       ;[while ]
+      [let*-exp (vars var-exps bodies) (let-exp (list (car vars)) (list (car var-exps)) (if (null? (cdr vars)) bodies (syntax-expand (let*-exp (cdr vars) (cdr var-exps) bodies)))) ]
       [else exp])))
 
 (define reset-global-env
@@ -481,7 +495,7 @@
   (lambda ()
     (display "--> ")
     ;; notice that we don't save changes to the environment...
-    (let ([answer (top-level-eval (parse-exp (read)))])
+    (let ([answer (top-level-eval (syntax-expand (parse-exp (read))))])
       ;; TODO: are there answers that should display differently?
       (pretty-print answer) (newline)
       (rep))))  ; tail-recursive, so stack doesn't grow.
