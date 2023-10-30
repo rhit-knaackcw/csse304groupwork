@@ -335,7 +335,19 @@
 ;---------------------------------------+
 
 ; To be added in assignment 18a.
+(define-datatype continuation continuation?
+  [init-k]
+  [step1 (env environment?) (rands list?) (k continuation?)]
+  [step2 (old-v expression?) (k continuation?)])
 
+(define apply-k
+  (lambda (k v)
+    (cases continuation k
+      [init-k () v]
+      [step1 (env rands k)
+             (eval-rands env rands (step2 v k))]
+      [step2 (old-v k)
+             (apply-proc old-v v k)])))
 
 ;-------------------+
 ;                   |
@@ -348,20 +360,19 @@
 (define top-level-eval
   (lambda (form)
     ; later we may add things that are not expressions.
-    (eval-exp (empty-env) form)))                              
+    (eval-exp (empty-env) form (init-k))))                              
 
 ; eval-exp is the main component of the interpreter
 
+
 (define eval-exp
-  (lambda (env exp)
+  (lambda (env exp k)
    (cases expression exp
-      [lit-exp (datum) datum]
+      [lit-exp (datum) (apply-k k datum)]
       [var-exp (id)
                (apply-env env id)]
       [app-exp (rator rands)
-               (let ([proc-value (eval-exp env rator)]
-                     [args (eval-rands env rands)])
-                 (apply-proc proc-value args))]
+               (eval-exp env rator (step1 env rands k))]
       [lambda-exp (vars  bodies)
                   (closure-proc vars bodies env)]
       [lambda-exp-var (var-list bodies)
@@ -391,18 +402,18 @@
 ; evaluate the list of operands, putting results into a list
 
 (define eval-rands
-  (lambda (env rands)
-    (map (lambda (x) (eval-exp env x)) rands)))
+  (lambda (env rands k)
+    (map (lambda (x) (eval-exp env x k)) rands))) ;; MIGHT NEED TO BE CHANGED TO BE IN CPS FORM
 
 ;  Apply a procedure to its arguments.
 ;  At this point, we only have primitive procedures.  
 ;  User-defined procedures will be added later.
 
 (define apply-proc
-  (lambda (proc-value args)
+  (lambda (proc-value args k)
     (cases proc-val proc-value
-      [prim-proc (op) (apply-prim-proc op args)]
-      [closure-proc (vars code env) (last (map (lambda (x) (eval-exp (extend-env vars args env) x)) code))]
+      [prim-proc (op) (apply-prim-proc op args k)]
+      [closure-proc (vars code env) (last (map (lambda (x) (eval-exp (extend-env vars args env) x k)) code))] ;; MIGHT NEED TO BE CHANGED TO BE IN CPS FORM
       [else (error 'apply-proc
                    "Attempt to apply bad procedure: ~s" 
                    proc-value)])))
@@ -423,50 +434,51 @@
 ; built-in procedure individually.  We are "cheating" a little bit.
 
 (define apply-prim-proc
-  (lambda (prim-proc args)
+  (lambda (prim-proc args k)
     (case prim-proc
-      [(+) (apply + args)]
-      [(-) (apply - args)]
-      [(*) (apply * args)]
-      [(/) (apply / args)]
-      [(add1) (+ (1st args) 1)]
-      [(sub1) (- (1st args) 1)]
-      [(cons) (cons (1st args) (2nd args))]
-      [(=) (= (1st args) (2nd args))]
-      [(not) (not (1st args))]
-      [(zero?) (zero? (1st args))]
-      [(>=) (>= (1st args) (2nd args))]
-      [(<) (< (1st args) (2nd args))]
-      [(>) (> (1st args) (2nd args))]
-      [(car) (car (1st args))]
-      [(list) (apply list args)]
-      [(cdr) (cdr (1st args))]
-      [(null?) (null? (1st args))]
-      [(eq?) (eq? (1st args) (2nd args))]
-      [(equal?) (equal? (1st args) (2nd args))]
-      [(length) (length (1st args))]
-      [(list->vector) (list->vector (1st args))]
-      [(list?) (list? (1st args))]
-      [(pair?) (pair? (1st args))]
-      [(vector->list) (vector->list (1st args))]
-      [(vector?) (vector? (1st args))]
-      [(number?) (number? (1st args))]
-      [(symbol?) (symbol? (1st args))]
-      [(caar) (caar (1st args))]
-      [(cadr) (cadr (1st args))]
-      [(cadar) (cadar (1st args))]
-      [(procedure?) (proc-val? (1st args))]
-      [(vector) (apply vector args)]
-      [(vector-set!) (vector-set! (1st args) (2nd args) (3rd args))]
-      [(vector-ref) (vector-ref (1st args) (2nd args))]
-      [(even? ) (even? (1st args))]
-      [(or) (ormap (lambda (x) (if x #t #f)) args)]
-      [(void) (void)]
+      [(+) (apply-k k (apply + args))]
+      [(-) (apply-k k (apply - args))]
+      [(*) (apply-k k (apply * args))]
+      [(/) (apply-k k (apply / args))]
+      [(add1) (apply-k k (+ (1st args) 1))]
+      [(sub1) (apply-k k (- (1st args) 1))]
+      [(cons) (apply-k k (cons (1st args) (2nd args)))]
+      [(=) (apply-k k (= (1st args) (2nd args)))]
+      [(not) (apply-k k (not (1st args)))]
+      [(zero?) (apply-k k (zero? (1st args)))]
+      [(>=) (apply-k k (>= (1st args) (2nd args)))]
+      [(<) (apply-k k (< (1st args) (2nd args)))]
+      [(>) (apply-k k (> (1st args) (2nd args)))]
+      [(car) (apply-k k (car (1st args)))]
+      [(list) (apply-k k (apply list args))]
+      [(cdr) (apply-k k (cdr (1st args)))]
+      [(null?) (apply-k k (null? (1st args)))]
+      [(eq?) (apply-k k (eq? (1st args) (2nd args)))]
+      [(equal?) (apply-k k (equal? (1st args) (2nd args)))]
+      [(length) (apply-k k (length (1st args)))]
+      [(list->vector) (apply-k k (list->vector (1st args)))]
+      [(list?) (apply-k k (list? (1st args)))]
+      [(pair?) (apply-k k (pair? (1st args)))]
+      [(vector->list) (apply-k k (vector->list (1st args)))]
+      [(vector?) (apply-k k (vector? (1st args)))]
+      [(number?) (apply-k k (number? (1st args)))]
+      [(symbol?) (apply-k k (symbol? (1st args)))]
+      [(caar) (apply-k k (caar (1st args)))]
+      [(cadr) (apply-k k (cadr (1st args)))]
+      [(cadar) (apply-k k (cadar (1st args)))]
+      [(procedure?) (apply-k k (proc-val? (1st args)))]
+      [(vector) (apply-k k (apply vector args))]
+      [(vector-set!) (apply-k k (vector-set! (1st args) (2nd args) (3rd args)))]
+      [(vector-ref) (apply-k k (vector-ref (1st args) (2nd args)))]
+      [(even? ) (apply-k k (even? (1st args)))]
+      [(or) (apply-k k (ormap (lambda (x) (if x #t #f)) args))]
+      [(void) (apply-k k (void))]
       [(map)
-       (let recur ((proc (1st args)) (args (2nd args)))
-             (cond [(null? args) '()]
-                   [else (cons (apply-proc proc (list (car args))) (recur proc (cdr args)))])) ];(map (1st args) (cdr args))] (map (lambda (x) (apply-proc (1st args) x)) (cdr args))
-      [(apply) (apply (lambda (x) (apply-proc (1st args) x)) (cdr args))]
+       (let recur ((proc (1st args)) (args (2nd args)) (k k))
+             (cond [(null? args) (apply-k k '())]
+                   [else (apply-proc proc (list (car args)) (step3 ;;; NOT SURE HOW TO HANDLE NAMED LET
+                    (cons (apply-proc proc (list (car args))) (recur proc (cdr args)))])) ]
+      [(apply) (apply (lambda (x) (apply-proc (1st args) x k)) (cdr args))] ;;NOT SURE HOW TO MAKE MAP CPS
       [else (error 'apply-prim-proc 
                    "Bad primitive procedure name: ~s" 
                    prim-proc)])))
