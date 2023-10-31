@@ -338,7 +338,10 @@
 (define-datatype continuation continuation?
   [init-k]
   [step1 (env environment?) (rands list?) (k continuation?)]
-  [step2 (old-v expression?) (k continuation?)])
+  [step2 (old-v proc-val?) (k continuation?)]
+  [step3 (env environment?) (rands list?) (k continuation?)]
+  [step4 (proc proc-val?) (args list?) (k continuation?)]
+  [step5 (old-v scheme-value?) (k continuation?)])
 
 (define apply-k
   (lambda (k v)
@@ -347,7 +350,18 @@
       [step1 (env rands k)
              (eval-rands env rands (step2 v k))]
       [step2 (old-v k)
-             (apply-proc old-v v k)])))
+             (apply-proc old-v v k)]
+      [step3 (env rands k)
+             (if (null? (cdr rands))
+                 (apply-k k (cons v '()))
+                 (eval-rands env (cdr rands) (step5 v k)))]
+      [step5 (old-v k) (apply-k k (cons old-v v))]
+      [step4 (proc args k)
+             (cons v (map-helper proc (cdr args) k))]
+
+
+
+      )))
 
 ;-------------------+
 ;                   |
@@ -370,7 +384,7 @@
    (cases expression exp
       [lit-exp (datum) (apply-k k datum)]
       [var-exp (id)
-               (apply-env env id)]
+               (apply-k k (apply-env env id))]
       [app-exp (rator rands)
                (eval-exp env rator (step1 env rands k))]
       [lambda-exp (vars  bodies)
@@ -386,24 +400,27 @@
       [ne-if-exp (if-cond if-true) (if (eval-exp env if-cond)
                                        (eval-exp env if-true)
                                        (void))]
-      [let-exp (vars var-exps bodies)
-               (let* ((var-vals (eval-rands env var-exps))
-                      (new-env (extend-env vars var-vals env)))
-                 (last (eval-rands new-env bodies)))]
+      ;[let-exp (vars var-exps bodies)
+      ;         (let* ((var-vals (eval-rands env var-exps))
+      ;                (new-env (extend-env vars var-vals env)))
+      ;           (last (eval-rands new-env bodies)))]
       [begin-exp (bodies)
                  (last (map (lambda (x) (eval-exp env x)) bodies))]
       [define-exp (var var-exp)
         (set! global-env (extend-env (list var) (list (eval-exp env var-exp)) global-env))]
       ;[nlet-exp (proc vars var-exps bodies) (eval-exp env (let-exp (list (var-exp proc)) (let-exp vars var-exps bodies) (list (var-exp proc))))]
       ;[let*-exp (id body) #t]
-      [letrec-exp (proc-names idss bodies letrec-bodies) (let ([env (extend-env-recursively proc-names idss bodies env)]) (last (map (lambda (x) (eval-exp env x)) letrec-bodies)))]
+      ;[letrec-exp (proc-names idss bodies letrec-bodies) (let ([env (extend-env-recursively proc-names idss bodies env)]) (last (map (lambda (x) (eval-exp env x)) letrec-bodies)))]
       [else (error 'eval-exp "Bad abstract syntax: ~a" exp)])))
 
 ; evaluate the list of operands, putting results into a list
 
 (define eval-rands
   (lambda (env rands k)
-    (map (lambda (x) (eval-exp env x k)) rands))) ;; MIGHT NEED TO BE CHANGED TO BE IN CPS FORM
+    (eval-exp env (car rands) (step3 env rands k))))
+    
+   ; (map (lambda (x) (eval-exp env x k)) rands)))
+;Eval-rand will call eval-exp on the first item in rands, then have a step in apply-k that will call again on the rest of the list
 
 ;  Apply a procedure to its arguments.
 ;  At this point, we only have primitive procedures.  
@@ -473,16 +490,16 @@
       [(even? ) (apply-k k (even? (1st args)))]
       [(or) (apply-k k (ormap (lambda (x) (if x #t #f)) args))]
       [(void) (apply-k k (void))]
-      [(map)
-       (let recur ((proc (1st args)) (args (2nd args)) (k k))
-             (cond [(null? args) (apply-k k '())]
-                   [else (apply-proc proc (list (car args)) (step3 ;;; NOT SURE HOW TO HANDLE NAMED LET
-                    (cons (apply-proc proc (list (car args))) (recur proc (cdr args)))])) ]
-      [(apply) (apply (lambda (x) (apply-proc (1st args) x k)) (cdr args))] ;;NOT SURE HOW TO MAKE MAP CPS
+      [(map) (map-helper (1st args) (2nd args) k)]
+      [(apply) (apply (lambda (x) (apply-proc (1st args) x k)) (cdr args))] 
       [else (error 'apply-prim-proc 
                    "Bad primitive procedure name: ~s" 
                    prim-proc)])))
-
+(define map-helper
+  (lambda (proc args k)
+    (if (null? args)
+        (apply-k k '())
+        (apply-proc proc (list (car args)) (step4 proc args k)))))
 
 (define syntax-expand
   (lambda (exp)
